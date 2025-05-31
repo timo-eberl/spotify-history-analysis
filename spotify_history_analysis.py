@@ -67,6 +67,14 @@ def get_latest_date(history):
                 continue
     return latest_dt
 
+def total_listening_time(history):
+    """
+    Returns total listening time in minutes.
+    """
+    total_ms = sum(entry.get("ms_played", 0) for entry in history if entry.get("ms_played", 0) > 0)
+    total_minutes = total_ms // 60000
+    return total_minutes
+
 def top_songs_by_playtime(history, top_n=5):
     playtime_by_song = defaultdict(int)
 
@@ -89,6 +97,10 @@ def top_songs_by_playcount(history, top_n=5):
     count_by_song = defaultdict(int)
 
     for entry in history:
+        # Skip entries that were marked as skipped
+        if entry.get("skipped", False):
+            continue
+
         track = entry.get("master_metadata_track_name")
         artist = entry.get("master_metadata_album_artist_name")
 
@@ -383,6 +395,44 @@ def unique_artists_and_songs_per_month(history):
         }
     return counts_per_month
 
+def top_most_plays_single_day(history, top_n=5):
+    plays_by_song_and_day = defaultdict(int)
+
+    for entry in history:
+        if entry.get("skipped", False):
+            continue
+
+        track = entry.get("master_metadata_track_name")
+        artist = entry.get("master_metadata_album_artist_name")
+        ts = entry.get("ts")
+
+        if track and artist and ts:
+            key = f"{track} by {artist}"
+            date = datetime.fromisoformat(ts.replace("Z", "+00:00")).date()
+            plays_by_song_and_day[(key, date)] += 1
+
+    # Get top `top_n` by play count
+    top = sorted(plays_by_song_and_day.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    return top
+
+def top_most_plays_single_week(history, top_n=5):
+    plays_per_song_week = defaultdict(int)
+
+    for entry in history:
+        track = entry.get("master_metadata_track_name")
+        artist = entry.get("master_metadata_album_artist_name")
+        ts = entry.get("ts")
+        skipped = entry.get("skipped", False)
+
+        if track and artist and ts and not skipped:
+            dt = datetime.fromisoformat(ts)
+            year, week_num, _ = dt.isocalendar()
+            key = (f"{track} by {artist}", year, week_num)
+            plays_per_song_week[key] += 1
+
+    top_plays = sorted(plays_per_song_week.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    return top_plays
+
 
 if __name__ == "__main__":
     history = load_spotify_history()
@@ -405,11 +455,14 @@ if __name__ == "__main__":
     print(f"\nHistory analysis from {first_date.strftime('%Y-%m-%d')} to {latest_date.strftime('%Y-%m-%d')} "
       f"({history_days} days, {history_days / 365:.2f} years):")
 
+    total_minutes = total_listening_time(history)
+    print(f"\nTotal listening time: {total_minutes:,} minutes ({total_minutes // 60}h {total_minutes % 60}min)")
+
     print(f"\nTop {n_top_elements} most listened songs by total playtime:")
     for rank, (song, minutes) in enumerate(top_songs_by_playtime(history, n_top_elements), 1):
         print(f"{rank}. {song} - {minutes} min")
 
-    print(f"\nTop {n_top_elements} most listened songs by number of plays:")
+    print(f"\nTop {n_top_elements} most listened songs by number of plays (excluding skipped plays):")
     for rank, (song, count) in enumerate(top_songs_by_playcount(history, n_top_elements), 1):
         print(f"{rank}. {song} - {count} plays")
 
@@ -477,3 +530,11 @@ if __name__ == "__main__":
     
     favorites = favorite_song_per_month(history)
     counts_per_month = unique_artists_and_songs_per_month(history)
+
+    print(f"\nTop {n_top_elements} most plays of a single song in one day:")
+    for (song, day), count in top_most_plays_single_day(history, top_n=n_top_elements):
+        print(f"{count} plays of '{song}' on {day}")
+
+    print(f"\nTop {n_top_elements} most plays of a single song in one week:")
+    for (song, year, week_num), count in top_most_plays_single_week(history, top_n=n_top_elements):
+        print(f"{count} plays of '{song}' in week {week_num} of {year}")

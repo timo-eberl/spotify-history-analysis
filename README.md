@@ -12,6 +12,7 @@ This Python script generates various statistics and insights, including:
 - Listening time distribution by hour of day and month of year
 - Favorite song per month
 - Number of unique artists and songs per month
+- Top number of plays of a single song on one day / one week
 
 ## Requirements
 
