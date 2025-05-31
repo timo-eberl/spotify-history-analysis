@@ -11,6 +11,8 @@ import pytz
 n_top_elements = 10
 # Filter to only the last x days
 history_days = int(365 * 1)
+# Optional date until the data should be filtered
+last_date = None # e.g. "2024-12-31"
 
 def load_spotify_history(directory='.'):
     history = []
@@ -386,6 +388,9 @@ if __name__ == "__main__":
     history = load_spotify_history()
 
     latest_date = get_latest_date(history) # latest recorded date
+    if last_date is not None: # last_date can override
+        # Parse last_date string into datetime object, assuming no time given
+        latest_date = datetime.fromisoformat(last_date)
     if latest_date is None:
         # fallback to current date if no timestamps found
         latest_date = datetime.now(UTC)

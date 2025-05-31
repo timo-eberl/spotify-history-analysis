@@ -30,7 +30,8 @@ This Python script generates various statistics and insights, including:
 
 You can customize the analysis by changing these parameters in the script:
 
-| Parameter        | Description                                                                                     | Default Value |
-| ---------------- | ----------------------------------------------------------------------------------------------- | ------------- |
-| `n_top_elements` | Number of top items (songs, artists, etc.) to display in output                                 | `10`          |
-| `history_days`   | Number of days (counting backward from the latest date in your data) to include in the analysis | `365`         |
+| Parameter        | Description                                                                                                                     | Default Value |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `n_top_elements` | Number of top items (songs, artists, etc.) to display in output                                                                 | `10`          |
+| `history_days`   | Number of days (counting backward from the latest date in your data) to include in the analysis                                 | `365`         |
+| `last_date`      | Specify the latest date to use for analysis in `YYYY-MM-DD` format. If it is `None`, the latest date is detected from your data | `None`        |
