@@ -1,4 +1,4 @@
-# Spotify Data Analysis Script
+# Spotify History Analysis Script
 
 Analyze your Spotify streaming history - Way cooler than Wrapped!!
 
@@ -23,7 +23,7 @@ This Python script generates various statistics and insights, including:
 2. Download and extract the data. Move all files called `Streaming_History_Audio_***.json` next to this script.
 3. Run the script:
 	```bash
-	python3 spotify_history_analyzer.py
+	python3 spotify_history_analysis.py
 	```
 
 ## Configuration
