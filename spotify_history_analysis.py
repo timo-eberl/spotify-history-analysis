@@ -2,11 +2,15 @@
 
 import json
 import os
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timedelta, UTC
 import calendar
 import pytz
 import itertools
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+import sys
+from dotenv import load_dotenv
 
 # How long the list of top songs/artists/whatever should be
 n_top_elements = 10
@@ -14,6 +18,11 @@ n_top_elements = 10
 history_days = int(365 * 1)
 # Optional date until the data should be filtered
 last_date = None # e.g. "2024-12-31"
+# If false, the Spotify API is not used
+use_spotify_api = False
+
+CACHE_FILE_IDS = "artist_ids_cache.json"
+CACHE_FILE_GENRES = "artist_genres_cache.json"
 
 def load_spotify_history(directory='.'):
     history = []
@@ -67,6 +76,16 @@ def get_latest_date(history):
             except ValueError:
                 continue
     return latest_dt
+
+def load_cache(file_name):
+    if os.path.exists(file_name):
+        with open(file_name, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_cache(cache, file_name):
+    with open(file_name, "w") as f:
+        json.dump(cache, f)
 
 def total_listening_time(history):
     """
@@ -396,6 +415,41 @@ def unique_artists_and_songs_per_month(history):
         }
     return counts_per_month
 
+def get_unique_artists(history):
+    artists = set()
+
+    for entry in history:
+        artist = entry.get("master_metadata_album_artist_name")
+        if artist:
+            artists.add(artist)
+
+    return artists
+
+def unique_artists_by_listening_time(history, min_listening_time_sec):
+    listening_time_by_artist = defaultdict(int)
+
+    for entry in history:
+        artist = entry.get("master_metadata_album_artist_name")
+        duration = entry.get("ms_played", 0)
+        if artist and duration:
+            listening_time_by_artist[artist] += duration
+
+    # Filter artists by minimum listening time threshold
+    filtered_artists = [artist for artist, total_time in listening_time_by_artist.items() if total_time > min_listening_time_sec * 1000]
+    return filtered_artists
+
+def count_unique_songs(history):
+    songs = set()
+
+    for entry in history:
+        track = entry.get("master_metadata_track_name")
+        artist = entry.get("master_metadata_album_artist_name")
+
+        if track and artist:
+            songs.add((track, artist))
+
+    return len(songs)
+
 def top_most_plays_single_day(history, top_n=5):
     plays_by_song_and_day = defaultdict(int)
 
@@ -476,6 +530,103 @@ def find_songs_listened_together(history, time_window_minutes=30):
 
     return result
 
+def get_artist_ids(sp, unique_artists):
+    # Load cached artist ids
+    cache = load_cache(CACHE_FILE_IDS)
+    
+    artist_ids = []
+    for name in unique_artists:
+        if name in cache:
+            artist_id = cache[name]
+        else:
+            results = sp.search(q=f"artist:{name}", type='artist', limit=1)
+            items = results.get("artists", {}).get("items", [])
+            artist_id = items[0]['id'] if items else None
+            cache[name] = artist_id
+        
+        if artist_id:
+            artist_ids.append(artist_id)
+    
+    # Save updated cache
+    save_cache(cache, CACHE_FILE_IDS)
+    return artist_ids
+
+def get_genres_for_artists(sp, artist_ids, batch_size=50):
+    # Load cache using your function
+    cache = load_cache(CACHE_FILE_GENRES)
+
+    # Find artist IDs not in cache
+    missing_ids = [aid for aid in artist_ids if aid not in cache]
+
+    # Fetch missing artist genres in batches
+    for i in range(0, len(missing_ids), batch_size):
+        batch = missing_ids[i:i + batch_size]
+        response = sp.artists(batch)
+        artists_data = response.get('artists', [])
+        for artist in artists_data:
+            artist_id = artist['id']
+            genres = artist.get('genres', [])
+            cache[artist_id] = genres
+
+    # Save updated cache using your function
+    save_cache(cache, CACHE_FILE_GENRES)
+
+    # Return genres for all requested artists
+    return {aid: cache.get(aid, []) for aid in artist_ids}
+
+def genres_of_artists(sp, artists):
+    """
+    Returns: list of tuples (artist_name, genres)
+    """
+    artist_ids = get_artist_ids(sp, top_artist_names)
+    artist_genres = get_genres_for_artists(sp, artist_ids)
+    result = []
+    for name, aid in zip(artists, artist_ids):
+        genres = artist_genres.get(aid, [])
+        result.append((name, genres))
+    return result
+
+from collections import defaultdict
+
+def top_genres_by_listening_time(sp, history, artists, top_n=5):
+    """
+    sp: Spotify API
+    history: list of listening history entries, each with at least:
+        - 'master_metadata_album_artist_name'
+        - 'ms_played' (milliseconds played)
+    artists: list of artist names to consider
+    top_n: how many top genres to return
+
+    Returns:
+        List of tuples: [(genre, total_minutes), ...] sorted descending by minutes
+    """
+    artist_ids = get_artist_ids(sp, artists)
+    artist_genres = get_genres_for_artists(sp, artist_ids)
+
+    # Map artist name -> artist id
+    name_to_id = {name: aid for name, aid in zip(artists, artist_ids)}
+
+    # Convert artists list to set for faster lookup
+    artist_set = set(artists)
+    
+    genre_playtime_ms = defaultdict(int)
+
+    for entry in history:
+        artist_name = entry.get('master_metadata_album_artist_name')
+        if artist_name in artist_set:
+            ms_played = entry.get('ms_played', 0)
+            genres = artist_genres.get(name_to_id.get(artist_name), [])
+            for genre in genres:
+                genre_playtime_ms[genre] += ms_played
+
+    # Convert milliseconds to minutes
+    genre_playtime_min = {genre: ms / 60000 for genre, ms in genre_playtime_ms.items()}
+
+    # Sort and get top_n
+    top_genres = sorted(genre_playtime_min.items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+    return top_genres
+
 
 if __name__ == "__main__":
     history = load_spotify_history()
@@ -500,6 +651,10 @@ if __name__ == "__main__":
 
     total_minutes = total_listening_time(history)
     print(f"\nTotal listening time: {total_minutes:,} minutes ({total_minutes // 60}h {total_minutes % 60}min)")
+
+    print(f"\nYou listened to {len(get_unique_artists(history))} unique artists.")
+
+    print(f"\nYou listened to {count_unique_songs(history)} unique songs.")
 
     print(f"\nTop {n_top_elements} most listened songs by total playtime:")
     for rank, (song, minutes) in enumerate(top_songs_by_playtime(history, n_top_elements), 1):
@@ -591,3 +746,31 @@ if __name__ == "__main__":
             print(f"{song}:")
             for other_song, count in co_listens[song][:3]:
                 print(f"  - {other_song} ({count} times)")
+
+    if not use_spotify_api:
+        sys.exit(0)
+
+    load_dotenv()
+    CLIENT_ID = os.getenv("CLIENT_ID")
+    CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+
+    print(f"\nFurther analysis using the Spotify API:")
+
+    spotify = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri='http://127.0.0.1:3000',
+        requests_timeout=10))
+
+    top_artists = top_artists_by_playtime(history, n_top_elements)
+    top_artist_names = [artist for artist, _ in top_artists]
+    print(f"\nGenres of top {n_top_elements} artists by playtime:")
+    for artist, genres in genres_of_artists(spotify, top_artist_names):
+        print(f"{artist}: {', '.join(genres) if genres else 'No genres found'}")
+
+    # Get artists listened to for more than 5 hours (3600 seconds)
+    many_artists = unique_artists_by_listening_time(history, 3600 * 5)
+    top_genres = top_genres_by_listening_time(spotify, history, many_artists, top_n=n_top_elements)
+    print(f"\nTop {n_top_elements} genres by playtime, considering only artists with >5h listening time ({len(many_artists)} artists):")
+    for genre, minutes in top_genres:
+        print(f"{genre}: {int(minutes)} minutes")
