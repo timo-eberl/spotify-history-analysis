@@ -11,6 +11,7 @@ This Python script generates various statistics and insights, including:
 - Listening streaks (continuous listening sessions)
 - Listening time distribution by hour of day and month of year
 - Favorite song per month
+- Number of unique artists and songs per month
 
 ## Requirements
 

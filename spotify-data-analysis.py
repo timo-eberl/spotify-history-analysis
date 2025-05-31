@@ -5,6 +5,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timedelta, UTC
 import calendar
+import pytz
 
 # How long the list of top songs/artists/whatever should be
 n_top_elements = 10
@@ -344,10 +345,6 @@ def favorite_song_per_month(history):
     # Sort months chronologically
     sorted_months = sorted(monthly_song_playtime.keys())
 
-    # Exclude the earliest month (assumed incomplete)
-    if sorted_months:
-        sorted_months = sorted_months[1:]
-
     favorite_per_month = {}
     for month in sorted_months:
         song_data = monthly_song_playtime[month]
@@ -356,6 +353,33 @@ def favorite_song_per_month(history):
         favorite_per_month[month] = (song_name, round(total_ms / 60000, 2))
 
     return favorite_per_month
+
+def unique_artists_and_songs_per_month(history):
+    data = defaultdict(lambda: {'artists': set(), 'songs': set()})
+
+    for record in history:
+        ts = record.get('ts')
+        if not ts:
+            continue
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00')).astimezone(pytz.UTC)
+        month_key = dt.strftime('%Y-%m')
+
+        artist = record.get('master_metadata_album_artist_name')
+        song = record.get('master_metadata_track_name')
+
+        if artist:
+            data[month_key]['artists'].add(artist)
+        if song:
+            data[month_key]['songs'].add(song)
+
+    # Convert sets to counts
+    counts_per_month = {}
+    for month, sets in data.items():
+        counts_per_month[month] = {
+            'artists': len(sets['artists']),
+            'songs': len(sets['songs'])
+        }
+    return counts_per_month
 
 
 if __name__ == "__main__":
@@ -436,3 +460,15 @@ if __name__ == "__main__":
     print("-" * 75)
     for month, (song, minutes) in favorites.items():
         print(f"{month:<8} {minutes:<10} {song}")
+
+    counts_per_month = unique_artists_and_songs_per_month(history)
+    print("\nUnique artists and unique songs per month:")
+    print(f"{'Month':<8} {'Unique Artists':<15} {'Unique Songs':<12}")
+    print("-" * 40)
+    for month in sorted(counts_per_month.keys()):
+        artists_count = counts_per_month[month]['artists']
+        songs_count = counts_per_month[month]['songs']
+        print(f"{month:<8} {artists_count:<15} {songs_count:<12}")
+    
+    favorites = favorite_song_per_month(history)
+    counts_per_month = unique_artists_and_songs_per_month(history)
