@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, UTC
 import calendar
 import pytz
+import itertools
 
 # How long the list of top songs/artists/whatever should be
 n_top_elements = 10
@@ -433,6 +434,48 @@ def top_most_plays_single_week(history, top_n=5):
     top_plays = sorted(plays_per_song_week.items(), key=lambda x: x[1], reverse=True)[:top_n]
     return top_plays
 
+def find_songs_listened_together(history, time_window_minutes=30):
+    # Sort history by timestamp
+    sorted_history = sorted(history, key=lambda x: x["ts"])
+
+    # Prepare song co-occurrence dictionary
+    co_occurrence = defaultdict(lambda: defaultdict(int))
+
+    # Convert timestamp strings to datetime objects
+    for entry in sorted_history:
+        entry["ts"] = datetime.fromisoformat(entry["ts"].replace("Z", "+00:00"))
+
+    i = 0
+    while i < len(sorted_history):
+        window_start = sorted_history[i]["ts"]
+        window_end = window_start + timedelta(minutes=time_window_minutes)
+        window_entries = []
+
+        # Collect all entries within the time window
+        j = i
+        while j < len(sorted_history) and sorted_history[j]["ts"] <= window_end:
+            track = sorted_history[j].get("master_metadata_track_name")
+            artist = sorted_history[j].get("master_metadata_album_artist_name")
+            if track and artist and not sorted_history[j].get("skipped", False):
+                song = f"{track} by {artist}"
+                window_entries.append(song)
+            j += 1
+
+        # Count co-occurrences
+        for song1, song2 in itertools.combinations(set(window_entries), 2):
+            co_occurrence[song1][song2] += 1
+            co_occurrence[song2][song1] += 1
+
+        i += 1
+
+    # For each song, sort the co-listened songs
+    result = {}
+    for song, co_songs in co_occurrence.items():
+        sorted_co_songs = sorted(co_songs.items(), key=lambda x: x[1], reverse=True)
+        result[song] = sorted_co_songs
+
+    return result
+
 
 if __name__ == "__main__":
     history = load_spotify_history()
@@ -538,3 +581,13 @@ if __name__ == "__main__":
     print(f"\nTop {n_top_elements} most plays of a single song in one week:")
     for (song, year, week_num), count in top_most_plays_single_week(history, top_n=n_top_elements):
         print(f"{count} plays of '{song}' in week {week_num} of {year}")
+
+    time_window = 30
+    print(f"\nSongs often listened to together (in a {time_window} minute time window) with your top songs (playtime):")
+    co_listens = find_songs_listened_together(history, time_window)
+    # Print top 3 co-listened songs for a given song
+    for rank, (song, minutes) in enumerate(top_songs_by_playtime(history, n_top_elements), 1):
+        if song in co_listens:
+            print(f"{song}:")
+            for other_song, count in co_listens[song][:3]:
+                print(f"  - {other_song} ({count} times)")

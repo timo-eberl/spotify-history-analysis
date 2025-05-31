@@ -13,6 +13,7 @@ This Python script generates various statistics and insights, including:
 - Favorite song per month
 - Number of unique artists and songs per month
 - Top number of plays of a single song on one day / one week
+- Songs often listened to together
 
 ## Requirements
 
