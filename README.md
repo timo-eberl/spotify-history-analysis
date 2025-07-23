@@ -24,7 +24,8 @@ This Python script generates various statistics and insights, including:
 
 ## Usage
 
-1. Request Spotify Extended streaming history on Spotifys [Account privacy page](https://www.spotify.com/us/account/privacy/) - May take a few days
+1. Request your Spotify **Extended streaming history** on Spotifys [Account privacy page](https://www.spotify.com/us/account/privacy/) - May take a few days (it was one day for me)
+    > [!NOTE] The streaming history from "Account data" won't work with this script
 2. Download and extract the data. Move all files called `Streaming_History_Audio_***.json` next to this script.
 3. Run the script:
     ```bash
